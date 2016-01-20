@@ -2,6 +2,8 @@ from cvme import cvme
 import cv2
 import sys
 import time
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 if __name__ == '__main__':
     f = sys.argv[1]

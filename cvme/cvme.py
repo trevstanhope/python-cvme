@@ -1,16 +1,12 @@
 import cv2, cv
-import sys
 from datetime import datetime
 import ast
 import numpy as np
 import scipy.cluster.hierarchy as hcluster
-import matplotlib.pyplot as plt
 import time
 import glob
 import math
 from sklearn import *
-import os
-from mpl_toolkits.mplot3d import Axes3D
 import tools
 
 # MATCHER ALGORITHMS
