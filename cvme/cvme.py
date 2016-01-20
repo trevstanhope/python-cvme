@@ -11,6 +11,7 @@ import math
 from sklearn import *
 import os
 from mpl_toolkits.mplot3d import Axes3D
+import tools
 
 # MATCHER ALGORITHMS
 CVME_SURF = 1
@@ -39,10 +40,6 @@ CROP_WIDTH = 400
 CROP_HEIGHT = 300
 FPS = 25
 ZOOM = 0.975
-
-def maprange(val, a, b):
-    (a1, a2), (b1, b2) = a, b
-    return  b1 + ((val - a1) * (b2 - b1) / (a2 - a1))
 
 class CVME:
     def __init__(self, cam, features=CVME_SURF):
@@ -104,7 +101,7 @@ class CVME:
         return v, t
     def hist_filter(self, v, t):
         rounded = np.around(t, 0).astype(np.int32)
-        bins = [maprange(i, (-180,180), (0,360)) for i in rounded]
+        bins = [tools.maprange(i, (-180,180), (0,360)) for i in rounded]
         counts = np.bincount(bins)
         mode = np.argmax(counts)
         best = np.isclose(bins, mode, atol=DEG_TOLERANCE) # each bin is equal to --> mode +/- DEG_TOLERANCE
@@ -162,29 +159,3 @@ class CVME:
             self.feature_descriptor.hessianThreshold = val
         if self.features == CVME_ORB:
             self.feature_descriptor = cv2.ORB(val)
-            
-if __name__ == '__main__':
-    f = sys.argv[1]
-    cam = cv2.VideoCapture(f)
-    root = CVME(cam, features=CVME_SURF)
-    Q = []
-    while True:
-        try:
-            t1 = time.time()
-            n = root.find_matches()
-            e = root.entropy()
-            (v,t) = root.calculate_vector()
-            t2 = time.time()
-            hz = 1 / (t2 - t1)
-            Q.append((n,v,t,e,hz))
-            # root.set_threshold()
-            print n, v, hz
-        except KeyboardInterrupt as e:
-            Q = [list(t) for t in zip(*Q)]
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-            ax.scatter(Q[4], Q[1], Q[3])
-            plt.show()
-            break
-        except Exception as e:
-            print(str(e))
