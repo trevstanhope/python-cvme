@@ -1,6 +1,4 @@
 import cv2, cv
-from datetime import datetime
-import ast
 import numpy as np
 import scipy.cluster.hierarchy as hcluster
 import time
