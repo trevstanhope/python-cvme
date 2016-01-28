@@ -34,13 +34,13 @@ if __name__ == '__main__':
         except Exception as e:
             print(str(e))
     try:
-        res = [list(t) for t in zip(*res)]
+        vec = [list(t) for t in zip(*res)]
         fig = plt.figure()
         ax1 = fig.add_subplot(211, projection='3d')
-        ax1.scatter(res[4], res[1], res[3])
+        ax1.scatter(vec[4], vec[1], vec[3])
         ax2 = fig.add_subplot(212)        
-        ax2.plot(res[0], res[-1])
-        ax2.plot(res[0], res[-2])
+        ax2.plot(vec[0], vec[-1])
+        ax2.plot(vec[0], vec[-2])
         plt.show()
     except Exception as e:
         print str(e)

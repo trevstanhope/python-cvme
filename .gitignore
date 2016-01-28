@@ -1,3 +1,7 @@
 *~
 *.pyc
 #*#
+data/*.avi
+data/*.csv
+output/*/*.csv
+
