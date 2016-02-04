@@ -12,7 +12,7 @@ def ensure_dir(f):
         os.makedirs(d)
         
 if __name__ == '__main__':
-    avi_files = glob.glob('data/*.avi')
+    avi_files = glob.glob('data/seedlings-*.avi')
     for threshold in sys.argv[1:]:
         SURF_THRESHOLD = int(threshold)
         ORB_THRESHOLD = int(threshold)
@@ -77,19 +77,22 @@ if __name__ == '__main__':
                         orb_hz = 1 / (orb_t2 - orb_t1)
                     except Exception as e:
                         print str(e)
-
+                        
+                        
                     # Compile results
-                    surf_res.append((i, rtk, surf_p, surf_m, surf_n, surf_hz,surf_t,surf_v))
-                    orb_res.append((i, rtk, orb_p, orb_m, orb_n,orb_hz,orb_t,orb_v))
-                    sift_res.append((i, rtk, sift_p, sift_m, sift_n,sift_hz,sift_t,sift_v))
-
+                    surf_res.append((i, rtk, surf_p, surf_m, surf_n, surf_hz, surf_t, surf_v))
+                    orb_res.append((i, rtk, orb_p, orb_m, orb_n, orb_hz, orb_t, orb_v))
+                    sift_res.append((i, rtk, sift_p, sift_m, sift_n, sift_hz, sift_t, sift_v))
+                    
                     # Show Progress
                     sys.stdout.flush()
-                    sys.stdout.write("\r%2.2f\t%2.1f\t%2.1f(%2.1f)\t%2.1f(%2.1f)\t%2.1f(%2.1f)" % (i/25.0,
-                                                                                                   float(rtk),
-                                                                                                   float(surf_v), float(surf_hz),
-                                                                                                   float(orb_v), float(orb_hz),
-                                                                                                   float(sift_v), float(sift_hz)))
+                    sys.stdout.write("\r%2.2f\t%2.1f\t%2.1f(%2.1f)\t%2.1f(%2.1f)\t%2.1f(%2.1f)" %
+                        (i/25.0,
+                         float(rtk),
+                         float(surf_v), float(surf_hz),
+                         float(orb_v), float(orb_hz),
+                         float(sift_v), float(sift_hz)
+                         ))
                     sys.stdout.flush()
                 except KeyboardInterrupt as e:
                     break
@@ -122,4 +125,3 @@ if __name__ == '__main__':
                 for r in sift_res:
                     n = [str(i) for i in r] + ['\n']
                     outfile.write(','.join(n))
-                

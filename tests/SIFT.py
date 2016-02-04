@@ -10,7 +10,7 @@ if __name__ == '__main__':
     cam = cv2.VideoCapture(f + '.avi')
     gps_file = open(f + '.csv', 'r')
     gps =  gps_file.readline()
-    root = cvme.CVME(cam, features=cvme.CVME_ORB)
+    root = cvme.CVME(cam, features=cvme.CVME_SIFT)
     res = []
     i = 0
     while True:

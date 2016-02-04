@@ -4,13 +4,14 @@ import sys
 import time
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import json
 
 if __name__ == '__main__':
     f = sys.argv[1]
     cam = cv2.VideoCapture(f + '.avi')
     gps_file = open(f + '.csv', 'r')
     gps =  gps_file.readline()
-    root = cvme.CVME(cam, features=cvme.CVME_ORB)
+    root = cvme.CVME(cam, features=cvme.CVME_BRISK)
     res = []
     i = 0
     while True:
@@ -23,12 +24,11 @@ if __name__ == '__main__':
             rtk = float(gps_parsed[-1])
             t1 = time.time()
             n = root.find_matches()
-            e = root.entropy()
             (v,t,m,p) = root.calculate_vector()
             t2 = time.time()
             hz = 1 / (t2 - t1)
             res.append((i,n,hz,t,e,v,rtk))
-            print("%d\t%2.1f\t%2.2f\t%2.2f") % (n, hz, v, rtk, (rtk - v))
+            print("%d\t%2.1f\t%2.2f\t%2.2f" % (n, hz, v, rtk))
         except KeyboardInterrupt as e:
             break
         except Exception as e:

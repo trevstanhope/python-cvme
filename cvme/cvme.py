@@ -1,3 +1,11 @@
+"""
+Computer-Vision Motion estimation
+Estimate motion of camera system
+TODO
+- Test FLANN
+- Test Ratio-test implementation (i.e. for NEIGHBORS=2)
+"""
+
 import cv2, cv
 import numpy as np
 import scipy.cluster.hierarchy as hcluster
@@ -11,6 +19,10 @@ import tools
 CVME_SURF = 1
 CVME_SIFT = 2
 CVME_ORB = 3
+CVME_FAST = 4
+CVME_BRISK = 5
+CVME_SURF2 = 6
+CVME_ORB_HAMMING = 7
 
 # DEFAULT CONSTANTS
 DIST_COEF = np.array([-3.20678032e+01, -6.02849983e-03, -3.21918860e-03, -7.12706263e-02, 2.41369510e-07])
@@ -19,7 +31,7 @@ CAM_MATRIX = np.array([[8.84126845e+03, 0.00000000e+00, 3.20129093e+02],
                        [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
-DEG_TOLERANCE = 2
+DEG_TOLERANCE = 2 # the tolerance for finding vectors of similar direction (was 2)
 NEIGHBORS = 1
 SURF_HESSIAN = 700
 SURF_OCTAVES = 4
@@ -28,22 +40,29 @@ SURF_UPRIGHT = 1
 SURF_EXTENDED = 1
 ORB_FEATURES = 2000
 SIFT_FEATURES = 1000
+BRISK_THRESHOLD = 50
 RATIO_TEST = 0.7
 CROP_WIDTH = 400
 CROP_HEIGHT = 300
 FPS = 25
 ZOOM = 0.975
-#NUM_MATCHES = 100
 
 class CVME:
-    def __init__(self, cam, features=CVME_SURF, threshold=None, FLANN=False):
+    def __init__(self, cam, features=CVME_SURF, threshold=None, FLANN=False, dist_coef=None, cam_matrix=None):
+        
         # Keyword Args
         self.cam = cam
         self.features = features
 
         # Constants
-        self.CAM_MATRIX = CAM_MATRIX
-        self.DIST_COEF = DIST_COEF
+        if cam_matrix:
+            self.CAM_MATRIX = cam_matrix
+        else:
+            self.CAM_MATRIX = CAM_MATRIX
+        if dist_coef:
+            self.DIST_COEF = dist_coef
+        else:
+            self.DIST_COEF = DIST_COEF
         self.CAM_WIDTH = CAM_WIDTH
         self.CAM_HEIGHT = CAM_HEIGHT
         self.DEG_TOLERANCE = DEG_TOLERANCE
@@ -55,11 +74,13 @@ class CVME:
         self.SURF_EXTENDED = SURF_EXTENDED
         self.ORB_FEATURES = ORB_FEATURES
         self.SIFT_FEATURES = SIFT_FEATURES
+        self.BRISK_THRESHOLD = BRISK_THRESHOLD
         self.RATIO_TEST = RATIO_TEST
         self.CROP_WIDTH = CROP_WIDTH
         self.CROP_HEIGHT = CROP_HEIGHT
         self.FPS = FPS
         self.ZOOM = ZOOM
+        self.FLANN = FLANN
         self.mapx, self.mapy = cv2.initUndistortRectifyMap(self.CAM_MATRIX,
                                                            self.DIST_COEF,
                                                            None,
@@ -68,30 +89,67 @@ class CVME:
                                                            5)
         # Feature-Detector
         if self.features == CVME_SURF:
+            norm = cv2.NORM_L2
             if threshold:
                 self.SURF_HESSIAN = threshold
             self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
-                                    nOctaves=self.SURF_OCTAVES,
-                                    nOctaveLayers=self.SURF_LAYERS,
-                                    extended=self.SURF_EXTENDED,
-                                    upright=self.SURF_UPRIGHT)
-        if self.features == CVME_ORB:
+                                    nOctaves=4,
+                                    nOctaveLayers=2,
+                                    extended=1,
+                                    upright=1)
+        elif self.features == CVME_SURF2:
+            norm = cv2.NORM_L2
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=2,
+                                    extended=0,
+                                    upright=1)
+        elif self.features == CVME_ORB:
+            norm = cv2.NORM_L2
             if threshold:
                 self.ORB_FEATURES = threshold
             self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
-        if self.features == CVME_SIFT:
+        elif self.features == CVME_ORB_HAMMING:
+            norm = cv2.NORM_HAMMING
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+        elif self.features == CVME_SIFT:
+            norm = cv2.NORM_L2
             if threshold:
                 self.SIFT_FEATURES = threshold
             self.feature_descriptor = cv2.SIFT(self.SIFT_FEATURES)
+        elif self.features == CVME_BRISK:
+            norm = cv2.NORM_HAMMING
+            if threshold:
+                self.BRISK_THRESHOLD = threshold
+            self.feature_descriptor = cv2.BRISK(self.BRISK_THRESHOLD)
+        else:
+            raise Exception("Unrecognized feature-descriptor specified")
 
-        # Brute-Force Matcher
-        if self.NEIGHBORS == 1:
-            self.matcher = cv2.BFMatcher(crossCheck=True)
-        if self.NEIGHBORS == 2:
-            self.matcher = cv2.BFMatcher()
-            
         # FLANN Matcher
-        #!TODO Flann Support
+        if FLANN:
+            if norm == cv2.NORM_L2:
+                flann_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+            else:
+                flann_params= dict(algorithm = FLANN_INDEX_LSH,
+                                   table_number = 6, # 12
+                                   key_size = 12,     # 20
+                                   multi_probe_level = 1) #2
+            matcher = cv2.FlannBasedMatcher(flann_params, {}) # bug : need to pass empty dict 
+        # Otherwise use the Brute-Force Matcher
+        else:
+            if self.NEIGHBORS == 1:
+                if norm == cv2.NORM_HAMMING:
+                    self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+                else:
+                    self.matcher = cv2.BFMatcher(crossCheck=True) # use cross checking if N=1
+            elif self.NEIGHBORS == 2:
+                self.matcher = cv2.BFMatcher() # use ratio-test if N=2
+            else:
+                raise Exception("Only 1 or 2 Neighbors are supported for the matcher")
         
         # Empty Variables
         self.pts1, self.desc1 = None, None
@@ -101,15 +159,14 @@ class CVME:
         while not s:        
             s, bgr = self.cam.read()
         self.gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        dst = self.undistort(self.gray)
-        self.pts2, self.desc2 = self.pts1, self.desc1
-        (self.pts1, self.desc1) = self.feature_descriptor.detectAndCompute(dst, None) # Find key-points
+        dst = self.undistort(self.gray) # apply undistortion remap
+        self.pts2, self.desc2 = self.pts1, self.desc1 # copy previous keypoints
+        (self.pts1, self.desc1) = self.feature_descriptor.detectAndCompute(dst, None) # Find key-points between set1 and set2
         self.matches = self.matcher.knnMatch(self.desc1, self.desc2, k=self.NEIGHBORS) # knn-Match descriptor sets
         m = len(self.matches)
-        return m
+        return m # returns total matches found
     def calculate_vector(self):
         pairs = []
-        # self.matches = sorted(self.matches, key = lambda x:x[0].distance)[:NUM_MATCHES] # PRE-SORT AND KEEP BEST?
         if self.NEIGHBORS == 1:
             for m in self.matches:
                 if len(m) != 0:
@@ -126,8 +183,7 @@ class CVME:
                     xy1 = (pt1.pt[0], pt1.pt[1])
                     xy2 = (pt2.pt[0], pt2.pt[1])
                     pairs.append((xy1, xy2))
-        projected = [(self.project(pt1), self.project(pt2)) for (pt1, pt2) in pairs]
-        vectorized = [self.vectorize(pt1, pt2) for (pt1, pt2) in projected]
+        vectorized = [self.vectorize(pt1, pt2) for (pt1, pt2) in pairs]
         v_all = np.array([v for (v,t) in vectorized])
         t_all = np.array([t for (v,t) in vectorized])
         if len(v_all) != 0:
@@ -140,13 +196,13 @@ class CVME:
             v = 'NaN'
             n = 0
         p = len(pairs)
-        return v, t, n, p
+        return v, t, n, p # returns speed, direction, number of valid matches, and number of vector-pairs
     def hist_filter(self, v, t):
         rounded = np.around(t, 0).astype(np.int32)
         bins = [tools.maprange(i, (-180,180), (0,360)) for i in rounded]
         counts = np.bincount(bins)
         mode = np.argmax(counts)
-        best = np.isclose(bins, mode, atol=self.DEG_TOLERANCE) # each bin is equal to --> mode +/- DEG_TOLERANCE
+        best = np.isclose(bins, mode, atol=self.DEG_TOLERANCE)
         v = v[best]
         t = t[best]
         return v, t
@@ -172,19 +228,13 @@ class CVME:
     def rmse(self, predictions, targets):
         return np.sqrt(((np.array(predictions) - np.array(targets)) ** 2).mean())
     def undistort(self, gray):
+        """ Apply undistort remap to current image """
         return cv2.remap(gray, self.mapx, self.mapy, cv2.INTER_LINEAR) # use linear interpolation
-    def project(self, pt):
-        """ Project from cam-space to real-space """
-        x = pt[0] - self.CAM_WIDTH / 2.0
-        y = pt[1] - self.CAM_HEIGHT / 2.0
-        X = x * self.ZOOM
-        Y = y * self.ZOOM
-        return (X,Y)
     def vectorize(self, pt1, pt2):
         """ Calculate vectors of good matches """    
         (x1, y1) = pt1
         (x2, y2) = pt2
-        d = np.sqrt( (x2 - x1)**2 + (y2 - y1)**2 )
+        d = self.ZOOM * np.sqrt( (x2 - x1)**2 + (y2 - y1)**2 )
         p = np.arctan2((x2 - x1), (y2 - y1))
         t = np.rad2deg(p) # converted to degrees
         v = (3.6 / 1000.0) * (d * float(self.FPS))# convert from mm/s to km/hr
@@ -196,26 +246,3 @@ class CVME:
         logs = np.log2(hist + 0.00001)
         entropy = -1 * (hist * logs).sum()
         return entropy
-    def get_constants(self):
-        constants = {
-            'DIST_COEF' : self.DIST_COEF.tolist(),
-            'CAM_MATRIX' : self.CAM_MATRIX.tolist(),
-            'CAM_WIDTH' : self.CAM_WIDTH,
-            'CAM_HEIGHT' : self.CAM_HEIGHT,
-            'SMOOTHING_N' : self.SMOOTHING_N,
-            'DEG_TOLERANCE' : self.DEG_TOLERANCE,
-            'NEIGHBORS' : self.NEIGHBORS,
-            'SURF_HESSIAN' : self.SURF_HESSIAN,
-            'SURF_OCTAVES' : self.SURF_OCTAVES,
-            'SURF_LAYERS' : self.SURF_LAYERS,
-            'SURF_UPRIGHT' : self.SURF_UPRIGHT,
-            'SURF_EXTENDED' : self.SURF_EXTENDED,
-            'ORB_FEATURES' : self.ORB_FEATURES,
-            'SIFT_FEATURES' : self.SIFT_FEATURES,
-            'CROSS_CHECK' : self.CROSS_CHECK,
-            'CROP_WIDTH' : self.CROP_WIDTH,
-            'CROP_HEIGHT' : self.CROP_HEIGHT,
-            'FPS' : self.FPS,
-            'ZOOM' : self.ZOOM
-        }
-        return constants
