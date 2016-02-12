@@ -18,25 +18,35 @@ def ensure_dir(f):
         os.makedirs(d)
         
 if __name__ == '__main__':
-    avi_files = glob.glob('data/*.avi')
+    avi_files = glob.glob('data/speed/*.avi')
     FEATURES = sys.argv[1] # the feature-descriptor to use for the comparison
     try:
         if 'ORB' == sys.argv[1]: features=cvme.CVME_ORB
+        if 'ORB_FAST' == sys.argv[1]: features=cvme.CVME_ORB_FAST
+        if 'ORB_FAST_N2' == sys.argv[1]: features=cvme.CVME_ORB_FAST_N2
         if 'ORB_HAMMING' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING
+        if 'ORB_HAMMING_N2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING_N2
+        if 'ORB_HAMMINGCL' == sys.argv[1]: features=cvme.CVME_ORB_HAMMINGCL
+        if 'ORB_HAMMINGCL_N2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMINGCL_N2
+        if 'ORB_HAMMING2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING2
+        if 'ORB_HAMMING2_N2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING2_N2
         if 'BRISK' == sys.argv[1]: features=cvme.CVME_BRISK
-        if 'SURF' == sys.argv[1]: features=cvme.CVME_SURF
-        if 'SURF2' == sys.argv[1]: features=cvme.CVME_SURF2
+        if 'USURFEx' == sys.argv[1]: features=cvme.CVME_USURFEx
+        if 'USURFEx_N2' == sys.argv[1]: features=cvme.CVME_USURFEx_N2
+        if 'USURF' == sys.argv[1]: features=cvme.CVME_USURF
+        if 'USURF_N2' == sys.argv[1]: features=cvme.CVME_USURF_N2
         if 'SIFT' == sys.argv[1]: features=cvme.CVME_SIFT
+        if 'SIFT_N2' == sys.argv[1]: features=cvme.CVME_SIFT_N2
     except:
-        print "usage: python -m tests.compare SURF/SURF2/ORB/SIFT/BRISK THRESH1 THRESH2 ..."
+        print "usage: python -m tests.compare ALG THRESH1 THRESH2 ..."
         exit(1)
 
     for threshold in sys.argv[2:]:
         for avi_file in avi_files:
             csv_file = avi_file.split('.')[0] + '.csv'
-            trial = avi_file.split('/')[1].split('.')[0]
+            trial = avi_file.split('/')[-1].split('.')[0]
             print "=============================="
-            print avi_file
+            print avi_file, csv_file, trial, threshold 
             cam = cv2.VideoCapture(avi_file)
             gps_file = open(csv_file, 'r')
             gps = gps_file.readline()

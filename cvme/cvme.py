@@ -14,15 +14,36 @@ import glob
 import math
 from sklearn import *
 import tools
+import skfuzzy as sf
+from scipy.cluster.vq import *
 
 # MATCHER ALGORITHMS
-CVME_SURF = 1
+CVME_USURFEx = 1
 CVME_SIFT = 2
 CVME_ORB = 3
 CVME_FAST = 4
 CVME_BRISK = 5
-CVME_SURF2 = 6
+CVME_USURFEx_N2 = 6
 CVME_ORB_HAMMING = 7
+CVME_ORB_HAMMING_N2 = 8
+CVME_USURF = 9
+CVME_USURF_N2 = 10
+CVME_ORB_FAST = 11
+CVME_ORB_FAST_N2 = 12
+CVME_ORB_HAMMING2 = 13
+CVME_ORB_HAMMING2_N2 = 14
+CVME_ORB_HAMMINGCL = 15
+CVME_ORB_HAMMINGCL_N2 = 16
+CVME_SIFT_N2 = 17
+
+# FILTER METHODS
+CVME_HIST = 1
+CVME_HCLUSTER = 2
+CVME_FUZZY = 3
+
+# EQUALIZATION METHODS
+CVME_CLAHE = 1
+CVME_HISTEQ = 2
 
 # DEFAULT CONSTANTS
 DIST_COEF = np.array([-3.20678032e+01, -6.02849983e-03, -3.21918860e-03, -7.12706263e-02, 2.41369510e-07])
@@ -32,29 +53,36 @@ CAM_MATRIX = np.array([[8.84126845e+03, 0.00000000e+00, 3.20129093e+02],
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
 DEG_TOLERANCE = 2 # the tolerance for finding vectors of similar direction (was 2)
-NEIGHBORS = 1
+NEIGHBORS = 2
 SURF_HESSIAN = 700
-SURF_OCTAVES = 4
-SURF_LAYERS = 2
-SURF_UPRIGHT = 1
-SURF_EXTENDED = 1
-ORB_FEATURES = 2000
+ORB_FEATURES = 500
 SIFT_FEATURES = 1000
 BRISK_THRESHOLD = 50
 RATIO_TEST = 0.7
-CROP_WIDTH = 400
-CROP_HEIGHT = 300
+CROP_WIDTH = 640
+CROP_HEIGHT = 480
 FPS = 25
 ZOOM = 0.975
+CLIP_LIMIT = 2.0
+TILE_GRID_SIZE = (8,8)
 
 class CVME:
-    def __init__(self, cam, features=CVME_SURF, threshold=None, FLANN=False, dist_coef=None, cam_matrix=None):
+    def __init__(self,
+                 cam,
+                 features=CVME_ORB,
+                 threshold=None,
+                 filt=CVME_HIST,
+                 dist_coef=None,
+                 cam_matrix=None,
+                 equalize=None):
         
         # Keyword Args
         self.cam = cam
         self.features = features
-
-        # Constants
+        self.filt = filt
+        self.equalize = equalize
+        
+        # Optional Args
         if cam_matrix:
             self.CAM_MATRIX = cam_matrix
         else:
@@ -63,15 +91,12 @@ class CVME:
             self.DIST_COEF = dist_coef
         else:
             self.DIST_COEF = DIST_COEF
+            
+        # Constants
         self.CAM_WIDTH = CAM_WIDTH
         self.CAM_HEIGHT = CAM_HEIGHT
         self.DEG_TOLERANCE = DEG_TOLERANCE
-        self.NEIGHBORS = NEIGHBORS
         self.SURF_HESSIAN = SURF_HESSIAN
-        self.SURF_OCTAVES = SURF_OCTAVES
-        self.SURF_LAYERS = SURF_LAYERS
-        self.SURF_UPRIGHT = SURF_UPRIGHT
-        self.SURF_EXTENDED = SURF_EXTENDED
         self.ORB_FEATURES = ORB_FEATURES
         self.SIFT_FEATURES = SIFT_FEATURES
         self.BRISK_THRESHOLD = BRISK_THRESHOLD
@@ -80,78 +105,154 @@ class CVME:
         self.CROP_HEIGHT = CROP_HEIGHT
         self.FPS = FPS
         self.ZOOM = ZOOM
-        self.FLANN = FLANN
+        self.CLIP_LIMIT = CLIP_LIMIT
+        self.TILE_GRID_SIZE = TILE_GRID_SIZE
         self.mapx, self.mapy = cv2.initUndistortRectifyMap(self.CAM_MATRIX,
                                                            self.DIST_COEF,
                                                            None,
                                                            self.CAM_MATRIX,
                                                            (self.CAM_WIDTH, self.CAM_HEIGHT),
                                                            5)
-        # Feature-Detector
-        if self.features == CVME_SURF:
-            norm = cv2.NORM_L2
-            if threshold:
-                self.SURF_HESSIAN = threshold
-            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
-                                    nOctaves=4,
-                                    nOctaveLayers=2,
-                                    extended=1,
-                                    upright=1)
-        elif self.features == CVME_SURF2:
-            norm = cv2.NORM_L2
+        
+        ## Feature-Detector
+        # U-SURF (Cross-Check)
+        if self.features == CVME_USURF:
             if threshold:
                 self.SURF_HESSIAN = threshold
             self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
                                     nOctaves=2,
-                                    nOctaveLayers=2,
+                                    nOctaveLayers=4,
                                     extended=0,
                                     upright=1)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(crossCheck=True)
+        # U-SURF (Ratio-Test)    
+        elif self.features == CVME_USURF_N2:
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=4,
+                                    extended=0,
+                                    upright=1)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher()
+        # U-SURF-Ex (Cross-Check)
+        elif self.features == CVME_USURFEx:
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=4,
+                                    extended=1,
+                                    upright=1)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(crossCheck=True)
+        # U-SURF-Ex (Ratio-Test)
+        elif self.features == CVME_USURFEx_N2:
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=4,
+                                    extended=1,
+                                    upright=1)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher()
+        # ORB (Cross-Check)
         elif self.features == CVME_ORB:
-            norm = cv2.NORM_L2
             if threshold:
                 self.ORB_FEATURES = threshold
             self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(crossCheck=True)
+        # ORB-HAMMING (Cross-Check)
         elif self.features == CVME_ORB_HAMMING:
-            norm = cv2.NORM_HAMMING
             if threshold:
                 self.ORB_FEATURES = threshold
             self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        # ORB-HAMMING (Ratio-Test)
+        elif self.features == CVME_ORB_HAMMING_N2:
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        # ORB-HAMMING-CLAHE (Cross-Check)
+        elif self.features == CVME_ORB_HAMMINGCL:
+            self.equalize = CVME_CLAHE
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        # ORB-HAMMING-CLAHE (Ratio-Test)
+        elif self.features == CVME_ORB_HAMMINGCL_N2:
+            self.equalize = CVME_CLAHE
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        # ORB-HAMMING2 (Cross-Check)
+        elif self.features == CVME_ORB_HAMMING2:
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES, WTA_K=4)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING2, crossCheck=True)
+        # ORB-HAMMING2 (N2)
+        elif self.features == CVME_ORB_HAMMING2_N2:
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES, WTA_K=4)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING2)
+        # ORB-FAST (Cross-check)
+        elif self.features == CVME_ORB_FAST:
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES, scoreType=cv2.ORB_FAST_SCORE)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        # ORB-FAST (Ratio-Test)
+        elif self.features == CVME_ORB_FAST_N2:
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES, scoreType=cv2.ORB_FAST_SCORE)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        # SIFT (Cross-Check)
         elif self.features == CVME_SIFT:
-            norm = cv2.NORM_L2
             if threshold:
                 self.SIFT_FEATURES = threshold
             self.feature_descriptor = cv2.SIFT(self.SIFT_FEATURES)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(crossCheck=True)
+        # SIFT (Ratio-Test)
+        elif self.features == CVME_SIFT_N2:
+            if threshold:
+                self.SIFT_FEATURES = threshold
+            self.feature_descriptor = cv2.SIFT(self.SIFT_FEATURES)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher()
+        # BRISK (Cross-Check)
         elif self.features == CVME_BRISK:
-            norm = cv2.NORM_HAMMING
             if threshold:
                 self.BRISK_THRESHOLD = threshold
             self.feature_descriptor = cv2.BRISK(self.BRISK_THRESHOLD)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(crossCheck=True)
         else:
-            raise Exception("Unrecognized feature-descriptor specified")
+            raise Exception("Unrecognized feature-descriptor")
 
-        # FLANN Matcher
-        if FLANN:
-            if norm == cv2.NORM_L2:
-                flann_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
-            else:
-                flann_params= dict(algorithm = FLANN_INDEX_LSH,
-                                   table_number = 6, # 12
-                                   key_size = 12,     # 20
-                                   multi_probe_level = 1) #2
-            matcher = cv2.FlannBasedMatcher(flann_params, {}) # bug : need to pass empty dict 
-        # Otherwise use the Brute-Force Matcher
-        else:
-            if self.NEIGHBORS == 1:
-                if norm == cv2.NORM_HAMMING:
-                    self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-                else:
-                    self.matcher = cv2.BFMatcher(crossCheck=True) # use cross checking if N=1
-            elif self.NEIGHBORS == 2:
-                self.matcher = cv2.BFMatcher() # use ratio-test if N=2
-            else:
-                raise Exception("Only 1 or 2 Neighbors are supported for the matcher")
-        
-        # Empty Variables
+        ## Equalization
+        if self.equalize == CVME_CLAHE:
+            self.clahe = cv2.createCLAHE(clipLimit=self.CLIP_LIMIT, tileGridSize=self.TILE_GRID_SIZE)
+            
+        ## Empty Variables
         self.pts1, self.desc1 = None, None
         self.pts2, self.desc2 = None, None
     def find_matches(self):
@@ -159,6 +260,10 @@ class CVME:
         while not s:        
             s, bgr = self.cam.read()
         self.gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        if self.equalize == CVME_CLAHE:
+            self.gray = self.clahe.apply(self.gray)
+        elif self.equalize == CVME_HISTEQ:
+            self.gray = self.hist_eq(self.gray)
         dst = self.undistort(self.gray) # apply undistortion remap
         self.pts2, self.desc2 = self.pts1, self.desc1 # copy previous keypoints
         (self.pts1, self.desc1) = self.feature_descriptor.detectAndCompute(dst, None) # Find key-points between set1 and set2
@@ -184,11 +289,20 @@ class CVME:
                     xy2 = (pt2.pt[0], pt2.pt[1])
                     pairs.append((xy1, xy2))
         vectorized = [self.vectorize(pt1, pt2) for (pt1, pt2) in pairs]
-        v_all = np.array([v for (v,t) in vectorized])
-        t_all = np.array([t for (v,t) in vectorized])
+        V = [v for (v,t) in vectorized]
+        T = [t for (v,t) in vectorized]
+        v_all = np.array(V)
+        t_all = np.array(T)
         if len(v_all) != 0:
-            v_best, t_best = self.hist_filter(v_all, t_all) # Filter for best matches
-            t = t_best.mean()
+            if self.filt == CVME_HIST:
+                v_best, t_best = self.hist_filter(v_all, t_all) # Filter for best matches
+            elif self.filt == CVME_HCLUSTER:
+                v_best, t_best = self.hcluster_filter(v_all, t_all) # Filter for best matches
+            elif self.filt == CVME_FUZZY:
+                v_best, t_best = self.fuzzy_filter(v_all, t_all) # Filter for best matches
+            else:
+                raise Exception("Bad filtering method!")
+            t = np.median(t_best)
             v = np.median(v_best) #!TODO: estimation for speed, axiom: middle of pack is most likely
             n = len(v_all)
         else:
@@ -198,11 +312,37 @@ class CVME:
         p = len(pairs)
         return v, t, n, p # returns speed, direction, number of valid matches, and number of vector-pairs
     def hist_filter(self, v, t):
-        rounded = np.around(t, 0).astype(np.int32)
-        bins = [tools.maprange(i, (-180,180), (0,360)) for i in rounded]
-        counts = np.bincount(bins)
-        mode = np.argmax(counts)
-        best = np.isclose(bins, mode, atol=self.DEG_TOLERANCE)
+        t_rounded = np.around(t, 0).astype(np.int32)
+        v_rounded = np.around(v, 1).astype(np.int32)
+        t_bins = [tools.maprange(i, (-180,180), (0,360)) for i in t_rounded]
+        v_bins = [i for i in v_rounded]
+        t_counts = np.bincount(t_bins)
+        t_mode = np.argmax(t_counts)
+        best = np.isclose(t_bins, t_mode, atol=self.DEG_TOLERANCE)
+        ## V_r = np.array(np.round(np.array(v[best])*10), np.uint8)
+        ## T_r = np.array(np.round(t[best]), np.uint8) 
+        ## output = np.zeros((200, 360, 3), np.uint8)
+        ## output[:, T_r, 2] = 255
+        ## output[V_r[V_r < 200], :, 1] = 255
+        ## cv2.imshow('',output)
+        ## if cv2.waitKey(5) == 0:
+        ##     pass
+        v = v[best]
+        t = t[best]
+        return v, t
+    def hcluster_filter(self, v, t):
+        X = np.array(zip(v,t))
+        T = hcluster.fclusterdata(X, 0.1)
+        lens = {}
+        best = []
+        w, h = X.shape
+        for idx, clno in enumerate(T):
+            lens.setdefault(clno, 0)
+            lens[clno] += 1
+        a = list(lens.values())
+        b = list(lens.keys())
+        clmax = b[a.index(max(a))]
+        best = [idx for idx, clno in enumerate(T) if clno == clmax]
         v = v[best]
         t = t[best]
         return v, t

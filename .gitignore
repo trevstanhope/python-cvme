@@ -1,7 +1,9 @@
 *~
 *.pyc
 #*#
-data/*.avi
-data/*.csv
+data/speed/*.avi
+data/speed/*.csv
+data/tracking/*.avi
+data/tracking/*.csv
 output/*/*.csv
 

@@ -12,7 +12,7 @@ def ensure_dir(f):
         os.makedirs(d)
         
 if __name__ == '__main__':
-    avi_files = glob.glob('data/seedlings-*.avi')
+    avi_files = glob.glob('data/speed/*.avi')
     for threshold in sys.argv[1:]:
         SURF_THRESHOLD = int(threshold)
         ORB_THRESHOLD = int(threshold)
