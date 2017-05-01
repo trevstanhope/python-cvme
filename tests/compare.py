@@ -21,22 +21,34 @@ if __name__ == '__main__':
     avi_files = glob.glob('data/speed/*.avi')
     FEATURES = sys.argv[1] # the feature-descriptor to use for the comparison
     try:
-        if 'ORB' == sys.argv[1]: features=cvme.CVME_ORB
         if 'ORB_FAST' == sys.argv[1]: features=cvme.CVME_ORB_FAST
         if 'ORB_FAST_N2' == sys.argv[1]: features=cvme.CVME_ORB_FAST_N2
         if 'ORB_HAMMING' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING
         if 'ORB_HAMMING_N2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING_N2
         if 'ORB_HAMMINGCL' == sys.argv[1]: features=cvme.CVME_ORB_HAMMINGCL
         if 'ORB_HAMMINGCL_N2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMINGCL_N2
+        if 'ORB_HAMMINGEQ' == sys.argv[1]: features=cvme.CVME_ORB_HAMMINGEQ
+        if 'ORB_HAMMINGEQ_N2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMINGEQ_N2
         if 'ORB_HAMMING2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING2
         if 'ORB_HAMMING2_N2' == sys.argv[1]: features=cvme.CVME_ORB_HAMMING2_N2
-        if 'BRISK' == sys.argv[1]: features=cvme.CVME_BRISK
+
+        # SURF
         if 'USURFEx' == sys.argv[1]: features=cvme.CVME_USURFEx
         if 'USURFEx_N2' == sys.argv[1]: features=cvme.CVME_USURFEx_N2
         if 'USURF' == sys.argv[1]: features=cvme.CVME_USURF
         if 'USURF_N2' == sys.argv[1]: features=cvme.CVME_USURF_N2
+        if 'SURFEx' == sys.argv[1]: features=cvme.CVME_SURFEx
+        if 'SURFEx_N2' == sys.argv[1]: features=cvme.CVME_SURFEx_N2
+        if 'SURF' == sys.argv[1]: features=cvme.CVME_SURF
+        if 'SURF_N2' == sys.argv[1]: features=cvme.CVME_SURF_N2
+
+        # SIFT
         if 'SIFT' == sys.argv[1]: features=cvme.CVME_SIFT
         if 'SIFT_N2' == sys.argv[1]: features=cvme.CVME_SIFT_N2
+
+        # Misc
+        if 'BRISK' == sys.argv[1]: features=cvme.CVME_BRISK
+
     except:
         print "usage: python -m tests.compare ALG THRESH1 THRESH2 ..."
         exit(1)

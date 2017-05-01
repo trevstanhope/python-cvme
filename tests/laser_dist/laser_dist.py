@@ -2,12 +2,26 @@ import numpy as np
 import cv2, cv
 import sys
 
-def find_dots_contour(bgr, search_x=(200, 500), search_y=(200, 400)):
+# DEFAULT CONSTANTS
+CAM_WIDTH = 640
+CAM_HEIGHT = 480
+DIST_COEF = np.array([-3.20678032e+01, -6.02849983e-03, -3.21918860e-03, -7.12706263e-02, 2.41369510e-07])
+CAM_MATRIX = np.array([[8.84126845e+03, 0.00000000e+00, 3.20129093e+02],
+                       [0.00000000e+00, 8.73308727e+03, 2.40511239e+02],
+                       [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+MAPX, MAPY = cv2.initUndistortRectifyMap(CAM_MATRIX,DIST_COEF,None,CAM_MATRIX,(CAM_WIDTH, CAM_HEIGHT),5)
+
+def find_dots_contour(bgr, search_x=(100, 540), search_y=(240, 480)):
     """ """
     dots = []
     hsv = cv2.cvtColor(bgr, cv.CV_BGR2HSV)
-    mask = cv2.inRange(hsv, (0,32,128), (32,255,255))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((8,8), np.uint8))  
+    mask1 = cv2.inRange(hsv, (0,0,0), (10,255,255))
+    mask2 = cv2.inRange(hsv, (240,0,0), (255,255,255))
+    mask = mask1 + mask2
+    #mask = cv2.remap(mask, MAPX, MAPY, cv2.INTER_LINEAR) # use linear interpolation
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((8,8), np.uint8))
+    #mask = cv2.morphologyEx(mask, cv2.MORPH_ELLIPSE, np.ones((3,3), np.uint8))
+    #$mask[mask > 0] = 255
     # find contours in the mask and initialize the current
     # (x, y) center of the ball
     cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
@@ -24,7 +38,7 @@ def find_dots_contour(bgr, search_x=(200, 500), search_y=(200, 400)):
                     dots.append((int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]), radius))
             except:
                 pass
-    return dots
+    return dots, mask
 def find_dots_hough(bgr):
     """
     http://docs.opencv.org/3.0-beta/doc/py_tutorials/py_imgproc/py_houghcircles/py_houghcircles.html
@@ -53,7 +67,7 @@ def calc_dist(pt1, pt2, a=0.007344, b=-2.40728224, c=246.317244):
     x2,y2 = pt2
     d = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     X = a*d**2 + b*d + c 
-    return X
+    return X, d
 def maprange(val, a, b):
     (a1, a2), (b1, b2) = a, b
     return  b1 + ((val - a1) * (b2 - b1) / (a2 - a1))
@@ -64,8 +78,8 @@ if __name__ == '__main__':
         dots = find_dots_contour(mask)
         pt1 = (dots[1][0], dots[1][1])
         pt2 = (dots[0][0], dots[0][1])
-        dist = calc_dist(pt1, pt2)
-        print "Distance (cm): %f" % calc_dist(pt1, pt2)
+        X, d = calc_dist(pt1, pt2)
+        print "Distance (px): %f" % d
         for x,y,r in dots:
             cv2.circle(bgr, (int(x), int(y)), int(r), (255, 0, 0), 2)
         cv2.line(bgr, pt1, pt2, (0,255,0))
@@ -78,18 +92,19 @@ if __name__ == '__main__':
             try:
                 s, bgr = cam.read()
                 if s:
-                    find_dots_sig(bgr)
-                    dots = find_dots_contour(bgr)
+                    dots, M = find_dots_contour(bgr)
+                    output = np.dstack((M,M,M))
                     if len(dots) == 2:
                         pt1 = (dots[1][0], dots[1][1])
                         pt2 = (dots[0][0], dots[0][1])
-                        print "Distance (cm): %f" % calc_dist(pt1, pt2)
+                        X, d = calc_dist(pt1, pt2)
+                        print "Distance (px): %f" % d
                         for x,y,r in dots:
-                            cv2.circle(bgr, (int(x), int(y)), int(r), (255, 0, 0), 2)
-                        cv2.line(bgr, pt1, pt2, (0,255,0))
+                            cv2.circle(output, (int(x), int(y)), int(r), (255, 0, 0), 2)
+                        cv2.line(output, pt1, pt2, (0,255,0))
                     else:
                         pass
-                    cv2.imshow('', bgr)
+                    cv2.imshow('', output)
                     if cv2.waitKey(5) == 0:
                         pass
             except KeyboardInterrupt:

@@ -16,6 +16,9 @@ from sklearn import *
 import tools
 import skfuzzy as sf
 from scipy.cluster.vq import *
+import matplotlib.pyplot as plt
+import dip
+import diptest
 
 # MATCHER ALGORITHMS
 CVME_USURFEx = 1
@@ -35,10 +38,17 @@ CVME_ORB_HAMMING2_N2 = 14
 CVME_ORB_HAMMINGCL = 15
 CVME_ORB_HAMMINGCL_N2 = 16
 CVME_SIFT_N2 = 17
+CVME_SURFEx = 18
+CVME_SURFEx_N2 = 19
+CVME_SURF = 20
+CVME_SURF_N2 = 21
+CVME_ORB_HAMMINGEQ = 22
+CVME_ORB_HAMMINGEQ_N2 = 23
+CVME_BRISK_N2 = 24
 
 # FILTER METHODS
 CVME_HIST = 1
-CVME_HCLUSTER = 2
+CVME_HIST2 = 2
 CVME_FUZZY = 3
 
 # EQUALIZATION METHODS
@@ -59,7 +69,7 @@ ORB_FEATURES = 500
 SIFT_FEATURES = 1000
 BRISK_THRESHOLD = 50
 RATIO_TEST = 0.7
-CROP_WIDTH = 640
+CROP_WIDTH = 480
 CROP_HEIGHT = 480
 FPS = 25
 ZOOM = 0.975
@@ -70,17 +80,23 @@ class CVME:
     def __init__(self,
                  cam,
                  features=CVME_ORB,
-                 threshold=None,
                  filt=CVME_HIST,
+                 threshold=None,
                  dist_coef=None,
                  cam_matrix=None,
-                 equalize=None):
+                 crop=False,
+                 equalize=False,
+                 show_video=False,
+                 RANSAC=False):
         
         # Keyword Args
         self.cam = cam
         self.features = features
         self.filt = filt
         self.equalize = equalize
+        self.show_video = show_video
+        self.crop = crop
+        self.RANSAC = RANSAC
         
         # Optional Args
         if cam_matrix:
@@ -115,8 +131,52 @@ class CVME:
                                                            5)
         
         ## Feature-Detector
+        # SURF (Cross-Check)
+        if self.features == CVME_SURF:
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=4,
+                                    extended=0,
+                                    upright=0)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(crossCheck=True)
+        # SURF (Ratio-Test)    
+        elif self.features == CVME_SURF_N2:
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=4,
+                                    extended=0,
+                                    upright=0)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher()
+        # SURFEx (Cross-Check)
+        elif self.features == CVME_SURFEx:
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=4,
+                                    extended=1,
+                                    upright=0)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(crossCheck=True)
+        # SURFEx (Ratio-Test)    
+        elif self.features == CVME_SURFEx_N2:
+            if threshold:
+                self.SURF_HESSIAN = threshold
+            self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
+                                    nOctaves=2,
+                                    nOctaveLayers=4,
+                                    extended=1,
+                                    upright=0)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher()
         # U-SURF (Cross-Check)
-        if self.features == CVME_USURF:
+        elif self.features == CVME_USURF:
             if threshold:
                 self.SURF_HESSIAN = threshold
             self.feature_descriptor = cv2.SURF(self.SURF_HESSIAN,
@@ -196,6 +256,22 @@ class CVME:
             self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
             self.NEIGHBORS = 2
             self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        # ORB-HAMMING-EQ (Cross-Check)
+        elif self.features == CVME_ORB_HAMMINGEQ:
+            self.equalize = CVME_HISTEQ
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+            self.NEIGHBORS = 1
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        # ORB-HAMMING-EQ (Ratio-Test)
+        elif self.features == CVME_ORB_HAMMINGEQ_N2:
+            self.equalize = CVME_HISTEQ
+            if threshold:
+                self.ORB_FEATURES = threshold
+            self.feature_descriptor = cv2.ORB(self.ORB_FEATURES)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
         # ORB-HAMMING2 (Cross-Check)
         elif self.features == CVME_ORB_HAMMING2:
             if threshold:
@@ -244,7 +320,14 @@ class CVME:
                 self.BRISK_THRESHOLD = threshold
             self.feature_descriptor = cv2.BRISK(self.BRISK_THRESHOLD)
             self.NEIGHBORS = 1
-            self.matcher = cv2.BFMatcher(crossCheck=True)
+            self.matcher = cv2.BFMatcher(cv2.NORM_L2SQR, crossCheck=True)
+        # BRISK (Ratio-Test)
+        elif self.features == CVME_BRISK_N2:
+            if threshold:
+                self.BRISK_THRESHOLD = threshold
+            self.feature_descriptor = cv2.BRISK(self.BRISK_THRESHOLD)
+            self.NEIGHBORS = 2
+            self.matcher = cv2.BFMatcher(cv2.NORM_L2SQR)
         else:
             raise Exception("Unrecognized feature-descriptor")
 
@@ -260,10 +343,13 @@ class CVME:
         while not s:        
             s, bgr = self.cam.read()
         self.gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        if self.crop:
+            self.gray = self.gray[(CAM_HEIGHT/2-CROP_HEIGHT/2):(CAM_HEIGHT/2+CROP_HEIGHT/2),
+                                  (CAM_WIDTH/2-CROP_WIDTH/2):(CAM_WIDTH/2+CROP_WIDTH/2)]
         if self.equalize == CVME_CLAHE:
             self.gray = self.clahe.apply(self.gray)
         elif self.equalize == CVME_HISTEQ:
-            self.gray = self.hist_eq(self.gray)
+            self.gray = cv2.equalizeHist(self.gray)
         dst = self.undistort(self.gray) # apply undistortion remap
         self.pts2, self.desc2 = self.pts1, self.desc1 # copy previous keypoints
         (self.pts1, self.desc1) = self.feature_descriptor.detectAndCompute(dst, None) # Find key-points between set1 and set2
@@ -272,6 +358,16 @@ class CVME:
         return m # returns total matches found
     def calculate_vector(self):
         pairs = []
+        # If RANSAC is enabled, find homography
+        if self.RANSAC:
+            a = time.time()
+            mkp1, mkp2 = zip(*self.matches)
+            p1 = np.float32([kp.pt for kp in self.pts1])
+            p2 = np.float32([kp.pt for kp in self.pts2])
+            H, mask = cv2.findHomography(p1, p2, cv2.RANSAC, 5.0)
+            b = time.time()
+            print b - a
+        # Grab matches
         if self.NEIGHBORS == 1:
             for m in self.matches:
                 if len(m) != 0:
@@ -289,22 +385,36 @@ class CVME:
                     xy2 = (pt2.pt[0], pt2.pt[1])
                     pairs.append((xy1, xy2))
         vectorized = [self.vectorize(pt1, pt2) for (pt1, pt2) in pairs]
-        V = [v for (v,t) in vectorized]
-        T = [t for (v,t) in vectorized]
+        V,T = map(list,zip(*vectorized)) # [v for (v,t) in vectorized]
         v_all = np.array(V)
         t_all = np.array(T)
         if len(v_all) != 0:
+            # Filter for best matches
             if self.filt == CVME_HIST:
-                v_best, t_best = self.hist_filter(v_all, t_all) # Filter for best matches
-            elif self.filt == CVME_HCLUSTER:
-                v_best, t_best = self.hcluster_filter(v_all, t_all) # Filter for best matches
+                v_best, t_best = self.hist_filter(v_all, t_all)
+            elif self.filt == CVME_HIST2:
+                v_best, t_best = self.hist_filter2(v_all, t_all)
             elif self.filt == CVME_FUZZY:
-                v_best, t_best = self.fuzzy_filter(v_all, t_all) # Filter for best matches
+                v_best, t_best = self.fuzzy_filter(v_all, t_all)
             else:
                 raise Exception("Bad filtering method!")
             t = np.median(t_best)
             v = np.median(v_best) #!TODO: estimation for speed, axiom: middle of pack is most likely
             n = len(v_all)
+            # Optional video display
+            if self.show_video:
+                V_r = np.array(np.round(v_best*10), np.uint8)
+                T_r = np.array(np.round(t_best), np.uint8) 
+                mask = np.zeros((200, 360, 3), np.uint8)
+                cv2.imshow('', self.gray)
+                mask[:, T_r, 2] = 255
+                mask[V_r[V_r < 200], :, 1] = 255
+                height, width = self.gray.shape[:2]
+                res = cv2.resize(mask,(width, height), interpolation = cv2.INTER_CUBIC)
+                output = np.hstack((res, cv2.cvtColor(self.gray,cv2.COLOR_GRAY2RGB)))
+                cv2.imshow('', output)
+                if cv2.waitKey(5) == 0:
+                    pass
         else:
             t = 'NaN'
             v = 'NaN'
@@ -313,50 +423,25 @@ class CVME:
         return v, t, n, p # returns speed, direction, number of valid matches, and number of vector-pairs
     def hist_filter(self, v, t):
         t_rounded = np.around(t, 0).astype(np.int32)
-        v_rounded = np.around(v, 1).astype(np.int32)
         t_bins = [tools.maprange(i, (-180,180), (0,360)) for i in t_rounded]
-        v_bins = [i for i in v_rounded]
         t_counts = np.bincount(t_bins)
         t_mode = np.argmax(t_counts)
-        best = np.isclose(t_bins, t_mode, atol=self.DEG_TOLERANCE)
-        ## V_r = np.array(np.round(np.array(v[best])*10), np.uint8)
-        ## T_r = np.array(np.round(t[best]), np.uint8) 
-        ## output = np.zeros((200, 360, 3), np.uint8)
-        ## output[:, T_r, 2] = 255
-        ## output[V_r[V_r < 200], :, 1] = 255
-        ## cv2.imshow('',output)
-        ## if cv2.waitKey(5) == 0:
-        ##     pass
-        v = v[best]
-        t = t[best]
+        t_best = np.isclose(t_bins, t_mode, atol=self.DEG_TOLERANCE)
+        v = v[t_best]
+        t = t[t_best]
         return v, t
-    def hcluster_filter(self, v, t):
-        X = np.array(zip(v,t))
-        T = hcluster.fclusterdata(X, 0.1)
-        lens = {}
-        best = []
-        w, h = X.shape
-        for idx, clno in enumerate(T):
-            lens.setdefault(clno, 0)
-            lens[clno] += 1
-        a = list(lens.values())
-        b = list(lens.keys())
-        clmax = b[a.index(max(a))]
-        best = [idx for idx, clno in enumerate(T) if clno == clmax]
-        v = v[best]
-        t = t[best]
+    def hist_filter2(self, v, t, e=15):
+        t_rounded = np.around(t, 0).astype(np.int32)
+        t_bins = [tools.maprange(i, (-180,180), (0,360)) for i in t_rounded]
+        t_counts = np.bincount(t_bins)
+        Fa = np.cumsum(t_counts)
+        dFa = np.gradient(Fa, n=2)
+        dFa_max = np.argmax(dFa)
+        t_best = np.isclose(t_bins, dFa_max, atol=self.DEG_TOLERANCE)
+        v = v[t_best]
+        t = t[t_best]
         return v, t
-    def lin_reg(self, x, y):
-        x = rtk_smooth
-        y = surf_smooth
-        A = np.vstack([x, np.ones(len(x))]).T
-        m, b = np.linalg.lstsq(A, y)[0]
-        return m, b
-    def moving_average(x, n=5):
-        ret = np.cumsum(x, dtype=float)
-        ret[n:] = ret[n:] - ret[:-n]
-        return ret[n - 1:] / n
-    def hist_eq(self, gray):
+    def hist_eq(gray):
         hist, bins = np.histogram(gray.flatten(), 256, [0,256])
         cdf = hist.cumsum()
         cdf_normalized = cdf * hist.max() / cdf.max()
@@ -365,8 +450,6 @@ class CVME:
         cdf = np.ma.filled(cdf_m, 0).astype('uint8')
         gray_norm = cdf[gray] # Now we have the look-up table
         return gray_norm
-    def rmse(self, predictions, targets):
-        return np.sqrt(((np.array(predictions) - np.array(targets)) ** 2).mean())
     def undistort(self, gray):
         """ Apply undistort remap to current image """
         return cv2.remap(gray, self.mapx, self.mapy, cv2.INTER_LINEAR) # use linear interpolation
